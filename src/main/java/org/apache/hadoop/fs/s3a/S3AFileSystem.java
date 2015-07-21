@@ -526,8 +526,11 @@ public class S3AFileSystem extends FileSystem {
    * @throws FileNotFoundException when the path does not exist;
    *         IOException see specific implementation
    */
-  public FileStatus[] listStatus(Path f) throws FileNotFoundException,
-      IOException {
+  public FileStatus[] listStatus(Path f) throws FileNotFoundException, IOException {
+    return listStatus(f, false);
+  }
+  public FileStatus[] listStatus(Path f, boolean recursive) throws FileNotFoundException,
+          IOException {
     String key = pathToKey(f);
     LOG.info("List status for path: " + f);
 
@@ -542,7 +545,7 @@ public class S3AFileSystem extends FileSystem {
       ListObjectsRequest request = new ListObjectsRequest();
       request.setBucketName(bucket);
       request.setPrefix(key);
-      request.setDelimiter("/");
+      if (!recursive) request.setDelimiter("/");
       request.setMaxKeys(maxKeys);
 
       if (LOG.isDebugEnabled()) {
