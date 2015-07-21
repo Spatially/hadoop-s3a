@@ -435,7 +435,7 @@ public class S3AFileSystem extends FileSystem {
         LOG.debug("delete: Path is a directory");
       }
 
-      if (!recursive) {
+      if (!recursive && !status.isEmptyDirectory()) {
         throw new IOException("Path is a folder: " + f);
       }
 

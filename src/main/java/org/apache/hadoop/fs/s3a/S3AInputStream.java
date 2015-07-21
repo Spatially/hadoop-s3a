@@ -100,6 +100,8 @@ public class S3AInputStream extends FSInputStream {
       return;
     }
 
+    openIfNeeded();
+
     LOG.info("Reopening " +  wrappedObject.getKey() + " to seek to new offset " + (pos - this.pos));
     reopen(pos);
   }

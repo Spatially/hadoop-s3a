@@ -27,9 +27,9 @@ public class S3ARecursiveListStatus {
     public static void initialize() throws Exception {
         Configuration conf = new Configuration();
         fs = new S3AFileSystem();
-        conf.set("fs.s3a.access.key", "AKIAIPCAKS5FZG4OZBXA");
-        conf.set("fs.s3a.secret.key", "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");
-        fs.initialize(new URI("s3a://usw2-relateiq-hadoop-staging"), conf);
+        URI testURI = URI.create(conf.get("test.fs.s3a.name"));
+
+        fs.initialize(testURI, conf);
         fs.mkdirs(rootPath);
         for (int i = 0; i < pathLevel1; ++i) {
             Path subPath1 = new Path(rootPath, String.format("%03d", i));
