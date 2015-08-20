@@ -59,4 +59,9 @@ public class S3AFileStatus extends FileStatus {
   public int hashCode() {
     return super.hashCode();
   }
+
+  @Override
+  public String getOwner() {
+    return System.getProperty("user.name");
+  }
 }
