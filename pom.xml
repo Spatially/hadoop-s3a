@@ -63,7 +63,7 @@
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk</artifactId>
-            <version>1.8.3</version>
+            <version>1.10.15</version>
             <exclusions>
                 <exclusion>
                     <artifactId>commons-codec</artifactId>
@@ -274,7 +274,6 @@
             <artifactId>guava</artifactId>
             <groupId>com.google.guava</groupId>
             <version>18.0</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <artifactId>hadoop-auth</artifactId>

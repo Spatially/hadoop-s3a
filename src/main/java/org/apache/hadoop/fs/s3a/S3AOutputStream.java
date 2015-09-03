@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.s3a;
 
 import com.amazonaws.event.ProgressEvent;
+import com.amazonaws.event.ProgressEventType;
 import com.amazonaws.event.ProgressListener;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.CannedAccessControlList;
@@ -28,11 +29,12 @@ import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.TransferManagerConfiguration;
 import com.amazonaws.services.s3.transfer.Upload;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocalDirAllocator;
 import org.apache.hadoop.util.Progressable;
+
+import org.slf4j.Logger;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -40,6 +42,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
+import static com.amazonaws.event.ProgressEventType.TRANSFER_COMPLETED_EVENT;
+import static com.amazonaws.event.ProgressEventType.TRANSFER_PART_STARTED_EVENT;
 import static org.apache.hadoop.fs.s3a.Constants.*;
 
 public class S3AOutputStream extends OutputStream {
@@ -48,32 +52,35 @@ public class S3AOutputStream extends OutputStream {
   private boolean closed;
   private String key;
   private String bucket;
-  private AmazonS3Client client;
+  private TransferManager transfers;
   private Progressable progress;
   private long partSize;
-  private int partSizeThreshold;
+  private long partSizeThreshold;
   private S3AFileSystem fs;
   private CannedAccessControlList cannedACL;
   private FileSystem.Statistics statistics;
   private LocalDirAllocator lDirAlloc;
   private String serverSideEncryptionAlgorithm;
 
-  public static final Log LOG = S3AFileSystem.LOG;
+  public static final Logger LOG = S3AFileSystem.LOG;
 
-  public S3AOutputStream(Configuration conf, AmazonS3Client client, S3AFileSystem fs, String bucket, String key,
-  	                        Progressable progress, CannedAccessControlList cannedACL, FileSystem.Statistics statistics, String serverSideEncryptionAlgorithm)
+  public S3AOutputStream(Configuration conf, TransferManager transfers,
+    S3AFileSystem fs, String bucket, String key, Progressable progress,
+    CannedAccessControlList cannedACL, FileSystem.Statistics statistics,
+    String serverSideEncryptionAlgorithm)
       throws IOException {
     this.bucket = bucket;
     this.key = key;
-    this.client = client;
+    this.transfers = transfers;
     this.progress = progress;
     this.fs = fs;
     this.cannedACL = cannedACL;
     this.statistics = statistics;
     this.serverSideEncryptionAlgorithm = serverSideEncryptionAlgorithm;
 
-    partSize = conf.getLong(NEW_MULTIPART_SIZE, conf.getLong(OLD_MULTIPART_SIZE, DEFAULT_MULTIPART_SIZE));
-    partSizeThreshold = conf.getInt(NEW_MIN_MULTIPART_THRESHOLD, conf.getInt(OLD_MIN_MULTIPART_THRESHOLD, DEFAULT_MIN_MULTIPART_THRESHOLD));
+    partSize = conf.getLong(MULTIPART_SIZE, DEFAULT_MULTIPART_SIZE);
+    partSizeThreshold = conf.getLong(MIN_MULTIPART_THRESHOLD,
+        DEFAULT_MIN_MULTIPART_THRESHOLD);
 
     if (conf.get(BUFFER_DIR, null) != null) {
       lDirAlloc = new LocalDirAllocator(BUFFER_DIR);
@@ -84,7 +91,10 @@ public class S3AOutputStream extends OutputStream {
     backupFile = lDirAlloc.createTmpFileForWrite("output-", LocalDirAllocator.SIZE_UNKNOWN, conf);
     closed = false;
 
-    LOG.info("OutputStream for key '" + key + "' writing to tempfile: " + this.backupFile);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("OutputStream for key '" + key + "' writing to tempfile: " +
+                this.backupFile);
+    }
 
     this.backupStream = new BufferedOutputStream(new FileOutputStream(backupFile));
   }
@@ -101,30 +111,25 @@ public class S3AOutputStream extends OutputStream {
     }
 
     backupStream.close();
-    LOG.info("OutputStream for key '" + key + "' closed. Now beginning upload");
-    LOG.info("Minimum upload part size: " + partSize + " threshold " + partSizeThreshold);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("OutputStream for key '" + key + "' closed. Now beginning upload");
+      LOG.debug("Minimum upload part size: " + partSize + " threshold " + partSizeThreshold);
+    }
 
-    TransferManagerConfiguration transferConfiguration = new TransferManagerConfiguration();
-    transferConfiguration.setMinimumUploadPartSize(partSize);
-    transferConfiguration.setMultipartUploadThreshold(partSizeThreshold);
-
-    TransferManager transfers = new TransferManager(client);
-    transfers.setConfiguration(transferConfiguration);
 
     try {
-
       final ObjectMetadata om = new ObjectMetadata();
-    	if (StringUtils.isNotBlank(serverSideEncryptionAlgorithm)) {
-    		om.setServerSideEncryption(serverSideEncryptionAlgorithm);
-    	}
-
+      if (StringUtils.isNotBlank(serverSideEncryptionAlgorithm)) {
+        om.setSSEAlgorithm(serverSideEncryptionAlgorithm);
+      }
       PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, backupFile);
       putObjectRequest.setCannedAcl(cannedACL);
       putObjectRequest.setMetadata(om);
 
       Upload upload = transfers.upload(putObjectRequest);
 
-      ProgressableProgressListener listener = new ProgressableProgressListener(upload, progress, statistics);
+      ProgressableProgressListener listener =
+        new ProgressableProgressListener(upload, progress, statistics);
       upload.addProgressListener(listener);
 
       upload.waitForUploadResult();
@@ -143,14 +148,14 @@ public class S3AOutputStream extends OutputStream {
       throw new IOException(e);
     } finally {
       if (!backupFile.delete()) {
-        LOG.warn("Could not delete temporary s3a file: " + backupFile);
+        LOG.warn("Could not delete temporary s3a file: {}", backupFile);
       }
       super.close();
       closed = true;
-      transfers.shutdownNow(false);
     }
-
-    LOG.info("OutputStream for key '" + key + "' upload complete");
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("OutputStream for key '" + key + "' upload complete");
+    }
   }
 
   @Override
@@ -169,7 +174,8 @@ public class S3AOutputStream extends OutputStream {
     private long lastBytesTransferred;
     private Upload upload;
 
-    public ProgressableProgressListener(Upload upload, Progressable progress, FileSystem.Statistics statistics) {
+    public ProgressableProgressListener(Upload upload, Progressable progress,
+      FileSystem.Statistics statistics) {
       this.upload = upload;
       this.progress = progress;
       this.statistics = statistics;
@@ -182,8 +188,9 @@ public class S3AOutputStream extends OutputStream {
       }
 
       // There are 3 http ops here, but this should be close enough for now
-      if (progressEvent.getEventCode() == ProgressEvent.PART_STARTED_EVENT_CODE ||
-          progressEvent.getEventCode() == ProgressEvent.COMPLETED_EVENT_CODE) {
+      ProgressEventType pet = progressEvent.getEventType();
+      if (pet == TRANSFER_PART_STARTED_EVENT ||
+          pet == TRANSFER_COMPLETED_EVENT) {
         statistics.incrementWriteOps(1);
       }
 
