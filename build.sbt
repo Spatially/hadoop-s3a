@@ -7,17 +7,19 @@ scalaVersion := Versions.scalaVersion
 // additional libraries
 libraryDependencies ++= Seq(
 	//Hadoop
-	"org.apache.hadoop" % "hadoop-common" % "2.4.0" % "compile" excludeAll(
+	"org.apache.hadoop" % "hadoop-common" % "2.4.0" % "provided" excludeAll(
 		ExclusionRule(organization = "net.java.dev.jets3t", artifact = "jets3t"),
 		ExclusionRule(organization = "com.sun.jersey", artifact = "jersey-server"),
 		ExclusionRule(organization = "org.apache.zookeeper", artifact = "zookeeper"),
-		ExclusionRule(organization = "com.google.guava", artifact = "guava")
+		ExclusionRule(organization = "com.google.guava", artifact = "guava"),
+		ExclusionRule(organization = "commons-cli", artifact = "commons-cli"),
+		ExclusionRule(organization = "org.apache.commons", artifact = "commons-math")
 	),
 	// AWS
-	"com.amazonaws" % "aws-java-sdk" % "1.9.37" % "compile" excludeAll
+	"com.amazonaws" % "aws-java-sdk" % "1.9.37" % "provided" excludeAll
 		ExclusionRule(organization = "commons-codec", artifact = "commons-codec"),
 	// Guava
-	"com.google.guava" % "guava" % "18.0" % "compile",
+	"com.google.guava" % "guava" % "18.0" % "provided",
 	// Tests
 	"org.apache.hadoop" % "hadoop-common-test" % "0.22.0" % "test",
 	"org.apache.hadoop" % "hadoop-auth" % "2.4.0" % "test",
